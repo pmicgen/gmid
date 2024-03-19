@@ -649,6 +649,7 @@ class LoadMosfet:
 
         points = np.column_stack((x_array.ravel(), y_aray.ravel()))
 
+        """
         if isinstance(x_value, (tuple, np.ndarray)) and isinstance(y_value, (int, float)):
             if isinstance(x_value, tuple):
                 x = np.arange(*x_value)
@@ -668,7 +669,10 @@ class LoadMosfet:
             evaluate_at = np.dstack((X, Y)).transpose(1, 0, 2)
         else:
             evaluate_at = np.array([x_value, y_value])
-
+        """
+        
+        X, Y = np.meshgrid(x_value, y_value)
+        evaluate_at = np.dstack((X, Y)).transpose(1, 0, 2)
         z_value = griddata(points, z_array.ravel(), evaluate_at, method='cubic', rescale=True)
         return z_value
 

@@ -15,7 +15,7 @@ from ..parsers.hspice_parser import import_export
 
 ################################################################################
 
-NGSPICE_PATH = "ngspice"
+NGSPICE_PATH = "/opt/conda/envs/python311/bin/ngspice"
 HSPICE_PATH = "hspice"
 
 def range_to_arr(r):
@@ -36,6 +36,8 @@ class LookupTableGenerator:
         model_names={"nmos": "NMOS_VTH", "pmos": "PMOS_VTH"},
         description="gmid lookup table",
         raw_spice="",
+        model_display = "",
+        model_instantiation = "",
     ):
         self.vgs = np.array(vgs)
         self.vds = np.array(vds)
@@ -46,6 +48,8 @@ class LookupTableGenerator:
         self.temp = temp
         self.model_paths = model_paths
         self.model_names = model_names
+        self.model_display = model_display
+        self.model_instantiation = model_instantiation
         self.description = description
         self.raw_spice = raw_spice
         self.lookup_table = {}
@@ -69,16 +73,16 @@ class LookupTableGenerator:
         self.parameter_table = {
             # parameter name : [name recognized by simulator, name used in the output file],
             "id"   : ["save i(vds)"    , "i(i_vds)"],
-            "vth"  : ["save @m1[vth]"  , "v(@m1[vth])"],
-            "vdsat": ["save @m1[vdsat]", "v(@m1[vdsat])"],
-            "gm"   : ["save @m1[gm]"   , "@m1[gm]"],
-            "gmbs" : ["save @m1[gmbs]" , "@m1[gmbs]"],
-            "gds"  : ["save @m1[gds]"  , "@m1[gds]"],
-            "cgg"  : ["save @m1[cgg]"  , "@m1[cgg]"],
-            "cgs"  : ["save @m1[cgs]"  , "@m1[cgs]"],
-            "cbg"  : ["save @m1[cbg]"  , "@m1[cbg]"],
-            "cgd"  : ["save @m1[cgd]"  , "@m1[cgd]"],
-            "cdd"  : ["save @m1[cdd]"  , "@m1[cdd]"],
+            "vth"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[vth]"  , "v(@"+self.model_display+self.model_names[self.identifier]+"[vth])"],
+            "vdsat": ["save @"+self.model_display+self.model_names[self.identifier]+"[vdsat]", "v(@"+self.model_display+self.model_names[self.identifier]+"[vdsat])"],
+            "gm"   : ["save @"+self.model_display+self.model_names[self.identifier]+"[gm]"   , "@"+self.model_display+self.model_names[self.identifier]+"[gm]"],
+            "gmbs" : ["save @"+self.model_display+self.model_names[self.identifier]+"[gmbs]" , "@"+self.model_display+self.model_names[self.identifier]+"[gmbs]"],
+            "gds"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[gds]"  , "@"+self.model_display+self.model_names[self.identifier]+"[gds]"],
+            "cgg"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[cgg]"  , "@"+self.model_display+self.model_names[self.identifier]+"[cgg]"],
+            "cgs"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[cgs]"  , "@"+self.model_display+self.model_names[self.identifier]+"[cgs]"],
+            "cbg"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[cbg]"  , "@"+self.model_display+self.model_names[self.identifier]+"[cbg]"],
+            "cgd"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[cgd]"  , "@"+self.model_display+self.model_names[self.identifier]+"[cgd]"],
+            "cdd"  : ["save @"+self.model_display+self.model_names[self.identifier]+"[cdd]"  , "@"+self.model_display+self.model_names[self.identifier]+"[cdd]"],
         }
         self.save_internal_parameters = "\n".join([values[0] for values in self.parameter_table.values()])
 
@@ -91,6 +95,7 @@ class LookupTableGenerator:
             f".options TEMP = {self.temp}",
             f".options TNOM = {self.temp}",
             ".control",
+            "pre_osdi ./psp103_nqs.osdi",
             self.save_internal_parameters,
             analysis_string,
             "let i_vds = abs(i(vds))",
@@ -101,10 +106,11 @@ class LookupTableGenerator:
         return simulator
 
     def __run_ngspice(self, circuit):
+        print(f"run ngspice")
         with open(self.input_file_path, "w") as file:
             file.write("\n".join(circuit))
         ngspice_command = f"{NGSPICE_PATH} -b -o {self.log_file_path} {self.input_file_path}"
-        subprocess.run(ngspice_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(ngspice_command, shell=True)
 
     def __parse_ngspice_output(self):
         ars, _ = NgspiceRawFileReader().read_file(self.output_file_path)
@@ -204,7 +210,7 @@ class LookupTableGenerator:
 
     def __generate_netlist(self, length, vsb):
         if self.model_paths:
-            include_string = "\n".join([f".include '{path}'" for path in self.model_paths])
+            include_string = "\n".join([f".lib '{path}'" for path in self.model_paths])
         else:
             include_string = ""
 
@@ -214,7 +220,7 @@ class LookupTableGenerator:
             "VGS NG 0 DC=0",
             f"VBS NB 0 DC={-vsb * self.r}",
             "VDS ND 0 DC=0",
-            f"M1 ND NG 0 NB {self.model_names[self.identifier]} l={length} w={self.width}",
+            f"XM1 ND NG 0 NB {self.model_names[self.identifier]} L={length} W={self.width*1000000}",
             self.raw_spice,
         ]
         return circuit
@@ -224,7 +230,7 @@ class LookupTableGenerator:
         for idx, length in enumerate(self.lengths):
             print(f"-- length={length}")
             for idy, vsb in enumerate(np.linspace(self.vsb[0], self.vsb[1], self.n_vsb)):
-                circuit = self.__generate_netlist(length, vsb)
+                circuit = self.__generate_netlist(np.round(length*1000000,4), vsb)
                 simulator = self.simulator_setup()
                 circuit.extend(simulator)
                 self.run(circuit)
@@ -256,9 +262,9 @@ class LookupTableGenerator:
             self.lookup_table["pmos"]["parameter_names"] = list(self.parameter_table.keys())
 
     def __print_netlist(self):
-        self.r = 1
-        self.identifier = "nmos"
-        circuit = self.__generate_netlist(self.lengths[0], 0)
+        #self.r = 1
+        #self.identifier = "nmos"
+        circuit = self.__generate_netlist(np.round(self.lengths[0]*1000000,4), 0)
         if self.simulator == "ngspice":
             self.__ngspice_parameters()
             simulator = self.__ngspice_simulator_setup()
@@ -277,18 +283,22 @@ class LookupTableGenerator:
 
     def build(self, filepath):
         self.__make_tmp_files()
-        self.__print_netlist()
+        #self.__print_netlist()
+
+        print("holi")
 
         if "nmos" in self.model_names:
             print("Generating lookup table for NMOS")
             self.r = 1
             self.identifier = "nmos"
+            self.__print_netlist()
             self.__generate_loopkup_table(self.identifier)
 
         if "pmos" in self.model_names:
             print("Generating lookup table for PMOS")
             self.r = -1
             self.identifier = "pmos"
+            self.__print_netlist()
             self.__generate_loopkup_table(self.identifier)
 
         # Save results to file

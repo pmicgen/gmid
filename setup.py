@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='mosplot',
@@ -6,6 +6,7 @@ setup(
     description='A python tool for making plots of mosfet parameters.',
     author='Mohamed Watfa',
     author_email='medwatt@hotmail.com',
+    packages=find_packages(),
     install_requires=[
         'numpy',
         'matplotlib',
